@@ -1,0 +1,79 @@
+{
+  "entities": {
+    "users": {
+      "title": "User Profile",
+      "description": "User profile data and savings goal configuration.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string" },
+        "email": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "savingsGoal": { "type": "number" },
+        "savingsAccumulated": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email"]
+    },
+    "transactions": {
+      "title": "Financial Transaction",
+      "description": "Income or expense record.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "description": { "type": "string" },
+        "amount": { "type": "number" },
+        "type": { "type": "string", "enum": ["income", "expense"] },
+        "status": { "type": "string", "enum": ["received", "paid", "pending"] },
+        "date": { "type": "string", "format": "date-time" },
+        "category": { "type": "string" }
+      },
+      "required": ["userId", "description", "amount", "type", "date"]
+    },
+    "goals": {
+      "title": "Financial Goal",
+      "description": "A specific financial objective with a target amount and deadline.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "targetAmount": { "type": "number" },
+        "currentAmount": { "type": "number" },
+        "deadlineMonths": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "title", "targetAmount", "currentAmount", "deadlineMonths"]
+    },
+    "goal_transactions": {
+      "title": "Goal Transaction",
+      "description": "Deposit or withdrawal record for a specific goal.",
+      "type": "object",
+      "properties": {
+        "goalId": { "type": "string" },
+        "userId": { "type": "string" },
+        "amount": { "type": "number" },
+        "type": { "type": "string", "enum": ["deposit", "withdraw"] },
+        "date": { "type": "string", "format": "date-time" }
+      },
+      "required": ["goalId", "userId", "amount", "type", "date"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "users",
+      "description": "User profile and goals."
+    },
+    "/transactions/{transactionId}": {
+      "schema": "transactions",
+      "description": "Financial records for the user."
+    },
+    "/goals/{goalId}": {
+      "schema": "goals",
+      "description": "Financial goals for the user."
+    },
+    "/goal_transactions/{transactionId}": {
+      "schema": "goal_transactions",
+      "description": "History of deposits and withdrawals for goals."
+    }
+  }
+}
