@@ -124,7 +124,7 @@ function LandingPage() {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-6 text-center">
       <div className="flex items-center gap-2 mb-12">
-        <div className="w-10 h-10 bg-success/20 rounded-lg flex items-center justify-center text-success font-bold text-xl">
+        <div className="text-success font-bold text-4xl">
           $
         </div>
         <h1 className="text-2xl font-bold tracking-tighter">FINANCEIRO YE</h1>
@@ -367,7 +367,7 @@ function Dashboard() {
       {/* Header */}
       <header className="flex flex-col md:flex-row items-center justify-between gap-6">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-success/20 rounded-lg flex items-center justify-center text-success font-bold">
+          <div className="text-success font-bold text-2xl">
             $
           </div>
           <h1 className="text-xl font-bold tracking-tighter">FINANCEIRO YE</h1>
