@@ -127,14 +127,14 @@ function LandingPage() {
         <div className="w-10 h-10 bg-success/20 rounded-lg flex items-center justify-center text-success font-bold text-xl">
           $YE
         </div>
-        <h1 className="text-2xl font-bold tracking-tighter">DEYNANCEIRO</h1>
+        <h1 className="text-2xl font-bold tracking-tighter">FINANCEIRO YE</h1>
       </div>
 
       <div className="w-24 h-24 bg-white/5 rounded-3xl flex items-center justify-center mb-8 shadow-2xl">
         <span className="text-success font-bold text-3xl">$YE</span>
       </div>
 
-      <h2 className="text-3xl font-bold mb-4">Bem-vindo ao DEYNANCEIRO</h2>
+      <h2 className="text-3xl font-bold mb-4">Bem-vindo ao FINANCEIRO YE</h2>
       <p className="text-text-muted max-w-md mb-12 leading-relaxed">
         Sua planilha financeira inteligente com IA e planejamento de metas. 
         Faça login para começar a organizar sua vida financeira.
@@ -366,7 +366,7 @@ function Dashboard() {
           <div className="w-8 h-8 bg-success/20 rounded-lg flex items-center justify-center text-success font-bold">
             $YE
           </div>
-          <h1 className="text-xl font-bold tracking-tighter">DEYNANCEIRO</h1>
+          <h1 className="text-xl font-bold tracking-tighter">FINANCEIRO YE</h1>
         </div>
 
         <nav className="flex items-center bg-white/5 p-1 rounded-xl">
