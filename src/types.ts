@@ -16,6 +16,7 @@ export interface Transaction {
   type: 'income' | 'expense';
   status: 'received' | 'paid' | 'pending';
   date: string;
+  dueDate?: string;
   category: string;
 }
 

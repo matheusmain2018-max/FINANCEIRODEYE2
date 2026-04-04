@@ -26,6 +26,7 @@
         "type": { "type": "string", "enum": ["income", "expense"] },
         "status": { "type": "string", "enum": ["received", "paid", "pending"] },
         "date": { "type": "string", "format": "date-time" },
+        "dueDate": { "type": "string", "format": "date" },
         "category": { "type": "string" }
       },
       "required": ["userId", "description", "amount", "type", "date"]

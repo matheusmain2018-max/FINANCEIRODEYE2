@@ -159,6 +159,7 @@ function Dashboard() {
   const [desc, setDesc] = useState('');
   const [amount, setAmount] = useState('');
   const [type, setType] = useState<'income' | 'expense'>('income');
+  const [dueDate, setDueDate] = useState('');
 
   // AI state
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
@@ -170,6 +171,7 @@ function Dashboard() {
   const [newGoalTitle, setNewGoalTitle] = useState('');
   const [newGoalTarget, setNewGoalTarget] = useState('');
   const [newGoalMonths, setNewGoalMonths] = useState('');
+  const [goalToDelete, setGoalToDelete] = useState<string | null>(null);
 
   // Planning state
   const [goalTransactions, setGoalTransactions] = useState<GoalTransaction[]>([]);
@@ -244,10 +246,12 @@ function Dashboard() {
         type,
         status: type === 'income' ? 'received' : 'pending',
         date: new Date().toISOString(),
+        dueDate: type === 'expense' && dueDate ? dueDate : null,
         category: 'Geral'
       });
       setDesc('');
       setAmount('');
+      setDueDate('');
     } catch (err) {
       handleFirestoreError(err, 'create', 'transactions');
     }
@@ -291,9 +295,9 @@ function Dashboard() {
   };
 
   const deleteGoal = async (id: string) => {
-    if (!confirm("Tem certeza que deseja excluir esta meta?")) return;
     try {
       await deleteDoc(doc(db, 'goals', id));
+      setGoalToDelete(null);
     } catch (err) {
       handleFirestoreError(err, 'delete', 'goals');
     }
@@ -491,6 +495,15 @@ function Dashboard() {
                   value={amount}
                   onChange={e => setAmount(e.target.value)}
                 />
+                {type === 'expense' && (
+                  <input 
+                    type="date" 
+                    className="input-field" 
+                    value={dueDate}
+                    onChange={e => setDueDate(e.target.value)}
+                    title="Data de Vencimento"
+                  />
+                )}
                 <div className="flex gap-2">
                   <select 
                     className="input-field flex-1"
@@ -523,6 +536,7 @@ function Dashboard() {
                       <tr className="text-[10px] text-text-muted uppercase tracking-widest border-b border-white/5">
                         <th className="pb-4 font-medium">Status</th>
                         <th className="pb-4 font-medium">Descrição</th>
+                        <th className="pb-4 font-medium">Vencimento</th>
                         <th className="pb-4 font-medium">Valor</th>
                         <th className="pb-4 font-medium text-right">Ações</th>
                       </tr>
@@ -530,7 +544,7 @@ function Dashboard() {
                     <tbody className="divide-y divide-white/5">
                       {transactions.length === 0 ? (
                         <tr>
-                          <td colSpan={4} className="py-12 text-center text-text-muted">
+                          <td colSpan={5} className="py-12 text-center text-text-muted">
                             Nenhuma transação encontrada para este mês.
                           </td>
                         </tr>
@@ -586,6 +600,16 @@ function Dashboard() {
                             <td className="py-4 transition-all duration-500 group-hover:bg-white/[0.03]">
                               <p className="font-medium">{t.description}</p>
                               <p className="text-[10px] text-text-muted uppercase">{t.category}</p>
+                            </td>
+                            <td className="py-4 transition-all duration-500 group-hover:bg-white/[0.03]">
+                              {t.type === 'expense' && t.dueDate && (
+                                <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold ${
+                                  t.status === 'pending' ? 'animate-pulse-red text-danger border border-danger/30' : 'bg-white/5 text-text-muted'
+                                }`}>
+                                  <Clock className="w-3 h-3" />
+                                  {format(new Date(t.dueDate + 'T12:00:00'), 'dd/MM/yyyy')}
+                                </div>
+                              )}
                             </td>
                             <td className={`py-4 font-bold transition-all duration-500 group-hover:bg-white/[0.03] ${t.type === 'income' ? 'text-success' : 'text-danger'}`}>
                               {t.type === 'income' ? '+' : '-'} R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
@@ -682,7 +706,7 @@ function Dashboard() {
                         <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Prazo: {goal.deadlineMonths} Meses</p>
                       </div>
                       <button 
-                        onClick={() => deleteGoal(goal.id)}
+                        onClick={() => setGoalToDelete(goal.id)}
                         className="p-2 text-text-muted hover:text-danger transition-colors"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -841,7 +865,7 @@ function Dashboard() {
                     initial={{ opacity: 0, scale: 0.9 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.9 }}
-                    className="glass-card w-full max-w-md space-y-8"
+                    className="glass-card w-full max-w-md space-y-6"
                   >
                     <div className="flex justify-between items-center">
                       <h3 className="text-xl font-bold">Nova Meta</h3>
@@ -884,6 +908,38 @@ function Dashboard() {
                           onChange={e => setNewGoalMonths(e.target.value)}
                         />
                       </div>
+
+                      {/* Preview Section */}
+                      {(newGoalTarget && newGoalMonths) && (
+                        <div className="p-4 bg-primary/5 rounded-2xl border border-primary/20 space-y-3">
+                          <div className="flex justify-between items-center">
+                            <p className="text-xs text-text-muted font-medium">Aporte Mensal Necessário:</p>
+                            <p className="text-lg font-bold text-primary">
+                              R$ {(parseFloat(newGoalTarget) / parseInt(newGoalMonths)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            </p>
+                          </div>
+                          
+                          <div className="pt-3 border-t border-white/5">
+                            <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest mb-2">Outras Opções de Prazo:</p>
+                            <div className="grid grid-cols-2 gap-2">
+                              {[1, 2, 6, 12].map(m => (
+                                <button 
+                                  key={m}
+                                  onClick={() => setNewGoalMonths(m.toString())}
+                                  className={`p-2 rounded-lg border text-[10px] transition-all ${
+                                    newGoalMonths === m.toString() 
+                                      ? 'bg-primary/20 border-primary text-primary' 
+                                      : 'bg-white/5 border-white/5 text-text-muted hover:bg-white/10'
+                                  }`}
+                                >
+                                  <span className="block font-bold">{m} {m === 1 ? 'Mês' : 'Meses'}</span>
+                                  <span>R$ {(parseFloat(newGoalTarget) / m).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}/mês</span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     <button 
@@ -892,6 +948,44 @@ function Dashboard() {
                     >
                       Criar Meta
                     </button>
+                  </motion.div>
+                </div>
+              )}
+            </AnimatePresence>
+
+            {/* Delete Confirmation Modal */}
+            <AnimatePresence>
+              {goalToDelete && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[60] flex items-center justify-center p-4">
+                  <motion.div 
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.9 }}
+                    className="glass-card w-full max-w-sm text-center space-y-6"
+                  >
+                    <div className="w-16 h-16 bg-danger/10 text-danger rounded-full flex items-center justify-center mx-auto">
+                      <Trash2 className="w-8 h-8" />
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-bold mb-2">Excluir Meta?</h3>
+                      <p className="text-sm text-text-muted">
+                        Tem certeza que deseja excluir esta meta? Todo o histórico de depósitos será mantido, mas a meta deixará de existir.
+                      </p>
+                    </div>
+                    <div className="flex gap-3">
+                      <button 
+                        onClick={() => setGoalToDelete(null)}
+                        className="flex-1 py-3 rounded-xl bg-white/5 text-sm font-bold hover:bg-white/10 transition-all"
+                      >
+                        Cancelar
+                      </button>
+                      <button 
+                        onClick={() => deleteGoal(goalToDelete)}
+                        className="flex-1 py-3 rounded-xl bg-danger text-sm font-bold hover:bg-danger/90 transition-all"
+                      >
+                        Excluir
+                      </button>
+                    </div>
                   </motion.div>
                 </div>
               )}
