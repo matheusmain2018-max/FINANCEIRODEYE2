@@ -239,13 +239,18 @@ function Dashboard() {
   const addTransaction = async () => {
     if (!user || !desc || !amount) return;
     try {
+      const now = new Date();
+      const isCurrentMonth = currentDate.getMonth() === now.getMonth() && 
+                            currentDate.getFullYear() === now.getFullYear();
+      const transactionDate = isCurrentMonth ? now : currentDate;
+
       await addDoc(collection(db, 'transactions'), {
         userId: user.uid,
         description: desc,
         amount: parseFloat(amount),
         type,
         status: type === 'income' ? 'received' : 'pending',
-        date: new Date().toISOString(),
+        date: transactionDate.toISOString(),
         dueDate: type === 'expense' && dueDate ? dueDate : null,
         category: 'Geral'
       });
