@@ -27,7 +27,12 @@
         "status": { "type": "string", "enum": ["received", "paid", "pending"] },
         "date": { "type": "string", "format": "date-time" },
         "dueDate": { "type": "string", "format": "date" },
-        "category": { "type": "string" }
+        "category": { "type": "string" },
+        "paidAt": { "type": "string", "format": "date-time" },
+        "paidAmount": { "type": "number" },
+        "installmentsCount": { "type": "integer" },
+        "installmentNumber": { "type": "integer" },
+        "installmentGroupId": { "type": "string" }
       },
       "required": ["userId", "description", "amount", "type", "date"]
     },

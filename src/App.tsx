@@ -30,7 +30,8 @@ import {
   TrendingDown,
   Coins,
   Banknote,
-  DollarSign
+  DollarSign,
+  CreditCard
 } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, addMonths, subMonths } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -160,6 +161,14 @@ function Dashboard() {
   const [amount, setAmount] = useState('');
   const [type, setType] = useState<'income' | 'expense'>('income');
   const [dueDate, setDueDate] = useState('');
+  const [isInstallment, setIsInstallment] = useState(false);
+  const [installmentsCount, setInstallmentsCount] = useState('5');
+
+  // Payment confirmation states
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [paymentTargetTransaction, setPaymentTargetTransaction] = useState<Transaction | null>(null);
+  const [paymentDate, setPaymentDate] = useState('');
+  const [paymentAmount, setPaymentAmount] = useState('');
 
   // AI state
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
@@ -228,7 +237,7 @@ function Dashboard() {
       const filtered = data.filter(t => {
         const tDate = new Date(t.date);
         return tDate >= start && tDate <= end;
-      });
+      }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       setTransactions(filtered);
       setLoading(false);
     }, (err) => handleFirestoreError(err, 'list', 'transactions'));
@@ -244,19 +253,53 @@ function Dashboard() {
                             currentDate.getFullYear() === now.getFullYear();
       const transactionDate = isCurrentMonth ? now : currentDate;
 
-      await addDoc(collection(db, 'transactions'), {
-        userId: user.uid,
-        description: desc,
-        amount: parseFloat(amount),
-        type,
-        status: type === 'income' ? 'received' : 'pending',
-        date: transactionDate.toISOString(),
-        dueDate: type === 'expense' && dueDate ? dueDate : null,
-        category: 'Geral'
-      });
+      const baseVal = parseFloat(amount);
+      const count = isInstallment ? (parseInt(installmentsCount) || 1) : 1;
+
+      if (isInstallment && count > 1) {
+        const groupId = `installment_group_${Date.now()}`;
+        const baseDate = dueDate ? new Date(dueDate + 'T12:00:00') : transactionDate;
+
+        for (let i = 1; i <= count; i++) {
+          const instDueDate = addMonths(baseDate, i - 1);
+          const instDueDateStr = format(instDueDate, 'yyyy-MM-dd');
+          const instDateStr = instDueDate.toISOString();
+
+          await addDoc(collection(db, 'transactions'), {
+            userId: user.uid,
+            description: desc,
+            amount: baseVal,
+            type,
+            status: type === 'income' ? 'received' : 'pending',
+            date: instDateStr,
+            dueDate: instDueDateStr,
+            category: 'Geral',
+            installmentsCount: count,
+            installmentNumber: i,
+            installmentGroupId: groupId
+          });
+        }
+      } else {
+        const singleDueDate = dueDate ? dueDate : null;
+        const singleDateStr = dueDate ? new Date(dueDate + 'T12:00:00').toISOString() : transactionDate.toISOString();
+
+        await addDoc(collection(db, 'transactions'), {
+          userId: user.uid,
+          description: desc,
+          amount: baseVal,
+          type,
+          status: type === 'income' ? 'received' : 'pending',
+          date: singleDateStr,
+          dueDate: singleDueDate,
+          category: 'Geral'
+        });
+      }
+
       setDesc('');
       setAmount('');
       setDueDate('');
+      setIsInstallment(false);
+      setInstallmentsCount('5');
     } catch (err) {
       handleFirestoreError(err, 'create', 'transactions');
     }
@@ -270,10 +313,44 @@ function Dashboard() {
     }
   };
 
-  const toggleStatus = async (t: Transaction) => {
+  const handleStatusClick = (t: Transaction) => {
+    if (t.status === 'pending') {
+      setPaymentTargetTransaction(t);
+      const today = new Date();
+      setPaymentDate(format(today, 'yyyy-MM-dd'));
+      setPaymentAmount(t.amount.toString());
+      setPaymentModalOpen(true);
+    } else {
+      toggleToPending(t);
+    }
+  };
+
+  const toggleToPending = async (t: Transaction) => {
     try {
-      const newStatus = t.status === 'pending' ? (t.type === 'income' ? 'received' : 'paid') : 'pending';
-      await updateDoc(doc(db, 'transactions', t.id), { status: newStatus });
+      await updateDoc(doc(db, 'transactions', t.id), { 
+        status: 'pending',
+        paidAt: null,
+        paidAmount: null
+      });
+    } catch (err) {
+      handleFirestoreError(err, 'update', 'transactions');
+    }
+  };
+
+  const confirmPayment = async () => {
+    if (!paymentTargetTransaction) return;
+    try {
+      const pDate = paymentDate ? new Date(paymentDate + 'T12:00:00') : new Date();
+      const pAmount = paymentAmount ? parseFloat(paymentAmount) : paymentTargetTransaction.amount;
+
+      await updateDoc(doc(db, 'transactions', paymentTargetTransaction.id), { 
+        status: paymentTargetTransaction.type === 'income' ? 'received' : 'paid',
+        paidAt: pDate.toISOString(),
+        paidAmount: pAmount
+      });
+
+      setPaymentModalOpen(false);
+      setPaymentTargetTransaction(null);
     } catch (err) {
       handleFirestoreError(err, 'update', 'transactions');
     }
@@ -481,8 +558,8 @@ function Dashboard() {
             </div>
 
             {/* Quick Add */}
-            <div className="glass-card border-l-4 border-l-primary">
-              <h4 className="flex items-center gap-2 font-bold mb-6">
+            <div className="glass-card border-l-4 border-l-primary space-y-4">
+              <h4 className="flex items-center gap-2 font-bold">
                 <Plus className="w-5 h-5 text-primary" /> Adicionar Transação Rápida
               </h4>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -500,34 +577,68 @@ function Dashboard() {
                   value={amount}
                   onChange={e => setAmount(e.target.value)}
                 />
-                {type === 'expense' && (
-                  <input 
-                    type="date" 
-                    className="input-field" 
-                    value={dueDate}
-                    onChange={e => setDueDate(e.target.value)}
-                    title="Data de Vencimento"
-                  />
-                )}
-                <div className="flex gap-2">
+                <input 
+                  type="date" 
+                  className="input-field" 
+                  value={dueDate}
+                  onChange={e => setDueDate(e.target.value)}
+                  title={type === 'expense' ? "Data de Vencimento" : "Data de Recebimento"}
+                />
+              </div>
+
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pt-2 border-t border-white/5">
+                <div className="flex flex-wrap items-center gap-6">
                   <select 
-                    className="input-field flex-1"
+                    className="input-field w-40"
                     value={type}
                     onChange={e => setType(e.target.value as any)}
                   >
                     <option value="income">Receita</option>
                     <option value="expense">Despesa</option>
                   </select>
-                  <button onClick={addTransaction} className="btn-success px-8">
+
+                  <label className="flex items-center gap-2 cursor-pointer text-sm font-semibold select-none">
+                    <input 
+                      type="checkbox" 
+                      className="rounded border-white/10 bg-white/5 text-primary focus:ring-primary w-4 h-4"
+                      checked={isInstallment}
+                      onChange={e => setIsInstallment(e.target.checked)}
+                    />
+                    <span>Parcelar / Recorrente</span>
+                  </label>
+
+                  {isInstallment && (
+                    <div className="flex items-center gap-2 animate-fade-in">
+                      <input 
+                        type="number" 
+                        min="2" 
+                        max="120"
+                        placeholder="Parcelas" 
+                        className="input-field w-24 text-center" 
+                        value={installmentsCount}
+                        onChange={e => setInstallmentsCount(e.target.value)}
+                      />
+                      <span className="text-xs text-text-muted">vezes (x)</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-4">
+                  {isInstallment && amount && (
+                    <span className="text-xs text-text-muted font-medium bg-white/5 px-3 py-1.5 rounded-xl border border-white/5">
+                      Serão criadas {installmentsCount} parcelas de R$ {parseFloat(amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (Total: R$ {(parseFloat(amount) * (parseInt(installmentsCount) || 1)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })})
+                    </span>
+                  )}
+                  <button onClick={addTransaction} className="btn-success px-8 h-11">
                     <Plus className="w-5 h-5" /> Adicionar
                   </button>
                 </div>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div className="space-y-8">
               {/* Transaction List */}
-              <div className="lg:col-span-2 glass-card">
+              <div className="glass-card">
                 <div className="flex items-center justify-between mb-8">
                   <h4 className="font-bold text-lg">Lista de Pagamentos</h4>
                   <button className="text-text-muted hover:text-white flex items-center gap-2 text-sm">
@@ -541,7 +652,7 @@ function Dashboard() {
                       <tr className="text-[10px] text-text-muted uppercase tracking-widest border-b border-white/5">
                         <th className="pb-4 font-medium">Status</th>
                         <th className="pb-4 font-medium">Descrição</th>
-                        <th className="pb-4 font-medium">Vencimento</th>
+                        <th className="pb-4 font-medium">Vencimento / Recebimento</th>
                         <th className="pb-4 font-medium">Valor</th>
                         <th className="pb-4 font-medium text-right">Ações</th>
                       </tr>
@@ -558,14 +669,14 @@ function Dashboard() {
                           <tr key={t.id} className="group transition-all duration-500">
                             <td className="py-4 pl-4 transition-all duration-500 group-hover:bg-white/[0.03] group-hover:rounded-l-2xl">
                               <button 
-                                onClick={() => toggleStatus(t)} 
-                                className={`group/status relative flex items-center gap-3 px-4 py-2.5 rounded-2xl transition-all duration-500 border overflow-hidden active:scale-95 ${
+                                onClick={() => handleStatusClick(t)} 
+                                className={`group/status relative flex items-center gap-2 px-3 py-1.5 rounded-xl transition-all duration-500 border overflow-hidden active:scale-95 ${
                                   t.status === 'pending' 
                                     ? 'bg-danger/5 border-danger/20 text-danger/70 hover:border-danger/40 hover:bg-danger/10 hover:text-danger' 
-                                    : 'bg-success/10 border-success/40 text-success shadow-[0_0_25px_rgba(34,197,94,0.15)] hover:bg-success/20'
+                                    : 'bg-success/10 border-success/40 text-success shadow-[0_0_20px_rgba(34,197,94,0.1)] hover:bg-success/20'
                                 }`}
                               >
-                                <div className="relative z-10 flex items-center gap-2.5">
+                                <div className="relative z-10 flex items-center gap-2">
                                   <div className="relative flex items-center justify-center">
                                     <AnimatePresence mode="wait">
                                       {t.status === 'pending' ? (
@@ -576,7 +687,7 @@ function Dashboard() {
                                           exit={{ scale: 0, rotate: 180, opacity: 0 }}
                                           transition={{ type: "spring", stiffness: 300, damping: 20 }}
                                         >
-                                          <div className="w-2 h-2 rounded-full bg-danger animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.6)]" />
+                                          <div className="w-1.5 h-1.5 rounded-full bg-danger animate-pulse shadow-[0_0_6px_rgba(239,68,68,0.6)]" />
                                         </motion.div>
                                       ) : (
                                         <motion.div
@@ -586,38 +697,58 @@ function Dashboard() {
                                           exit={{ scale: 0, rotate: 180, opacity: 0 }}
                                           transition={{ type: "spring", stiffness: 300, damping: 20 }}
                                         >
-                                          <CheckCircle2 className="w-4 h-4 text-success" />
+                                          <CheckCircle2 className="w-3.5 h-3.5 text-success" />
                                         </motion.div>
                                       )}
                                     </AnimatePresence>
                                   </div>
-                                  <span className="text-[11px] font-black uppercase tracking-[0.15em]">
+                                  <span className="text-[10px] font-black uppercase tracking-[0.1em]">
                                     {t.status === 'pending' ? 'NÃO PAGO' : (t.type === 'income' ? 'RECEBIDO' : 'PAGO')}
                                   </span>
                                 </div>
 
                                 {/* Dynamic Background Glow */}
                                 <div className={`absolute inset-0 opacity-0 group-hover/status:opacity-100 transition-opacity duration-700 bg-gradient-to-r ${
-                                  t.status === 'pending' ? 'from-danger/20 via-transparent to-transparent' : 'from-success/30 via-transparent to-transparent'
+                                  t.status === 'pending' ? 'from-danger/15 via-transparent to-transparent' : 'from-success/20 via-transparent to-transparent'
                                 }`} />
                               </button>
                             </td>
                             <td className="py-4 transition-all duration-500 group-hover:bg-white/[0.03]">
-                              <p className="font-medium">{t.description}</p>
+                              <p className="font-medium">
+                                {t.description}
+                                {t.installmentNumber && t.installmentsCount && (
+                                  <span className="text-xs text-primary ml-1.5 font-bold">({t.installmentNumber}/{t.installmentsCount})</span>
+                                )}
+                              </p>
                               <p className="text-[10px] text-text-muted uppercase">{t.category}</p>
                             </td>
                             <td className="py-4 transition-all duration-500 group-hover:bg-white/[0.03]">
-                              {t.type === 'expense' && t.dueDate && (
-                                <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold ${
-                                  t.status === 'pending' ? 'animate-pulse-red text-danger border border-danger/30' : 'bg-white/5 text-text-muted'
-                                }`}>
-                                  <Clock className="w-3 h-3" />
-                                  {format(new Date(t.dueDate + 'T12:00:00'), 'dd/MM/yyyy')}
-                                </div>
-                              )}
+                              <div className="flex flex-col items-start gap-1">
+                                {t.dueDate && (
+                                  <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold w-fit ${
+                                    t.status === 'pending' ? 'animate-pulse-red text-danger border border-danger/30' : 'bg-white/5 text-text-muted'
+                                  }`}>
+                                    <Clock className="w-3 h-3" />
+                                    Venc: {format(new Date(t.dueDate + 'T12:00:00'), 'dd/MM/yyyy')}
+                                  </div>
+                                )}
+                                {t.paidAt && (
+                                  <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold bg-success/10 text-success border border-success/20 w-fit">
+                                    <CheckCircle2 className="w-3 h-3" />
+                                    Pago: {format(new Date(t.paidAt), 'dd/MM/yyyy')}
+                                  </div>
+                                )}
+                              </div>
                             </td>
                             <td className={`py-4 font-bold transition-all duration-500 group-hover:bg-white/[0.03] ${t.type === 'income' ? 'text-success' : 'text-danger'}`}>
-                              {t.type === 'income' ? '+' : '-'} R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                              <div>
+                                <span>{t.type === 'income' ? '+' : '-'} R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                                {t.paidAmount !== undefined && t.paidAmount !== null && t.paidAmount !== t.amount && (
+                                  <p className="text-[10px] text-text-muted font-normal">
+                                    Pago: R$ {t.paidAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                  </p>
+                                )}
+                              </div>
                             </td>
                             <td className="py-4 pr-4 text-right transition-all duration-500 group-hover:bg-white/[0.03] group-hover:rounded-r-2xl">
                               <button onClick={() => deleteTransaction(t.id)} className="text-text-muted hover:text-danger p-2 opacity-0 group-hover:opacity-100 transition-all">
@@ -631,47 +762,8 @@ function Dashboard() {
                   </table>
                 </div>
               </div>
-
-              {/* Sidebar */}
-              <div className="space-y-8">
-                {/* AI Consultant */}
-                <div className="glass-card relative overflow-hidden group">
-                  <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                  <div className="relative z-10">
-                    <div className="flex items-center justify-between mb-6">
-                      <h4 className="font-bold flex items-center gap-2">
-                        <Sparkles className="w-5 h-5 text-primary" /> Consultor de IA
-                      </h4>
-                      <div className="p-1.5 bg-primary/10 rounded-lg text-primary">
-                        <Sparkles className="w-4 h-4" />
-                      </div>
-                    </div>
-                    
-                    <div className="min-h-[200px] flex flex-col items-center justify-center text-center p-4">
-                      {aiAnalysis ? (
-                        <div className="text-sm text-left prose prose-invert max-w-full">
-                          <Markdown>{aiAnalysis}</Markdown>
-                          <button onClick={() => setAiAnalysis(null)} className="mt-4 text-xs text-primary hover:underline">Limpar análise</button>
-                        </div>
-                      ) : (
-                        <>
-                          <button 
-                            onClick={analyzeWithAI}
-                            disabled={isAnalyzing}
-                            className={`w-16 h-16 rounded-2xl bg-white/5 flex items-center justify-center mb-4 hover:bg-white/10 border border-white/5 transition-all ${isAnalyzing ? 'animate-pulse' : ''}`}
-                          >
-                            <Sparkles className={`w-8 h-8 ${isAnalyzing ? 'text-primary' : 'text-text-muted'}`} />
-                          </button>
-                          <p className="text-xs text-text-muted leading-relaxed">
-                            Clique no ícone para que a IA analise sua planilha e dê dicas.
-                          </p>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
             </div>
+
           </motion.div>
         ) : (
           <motion.div 
@@ -1008,11 +1100,11 @@ function Dashboard() {
               </div>
               <div className="glass-card p-6 flex items-start gap-4 hover:border-primary/30 transition-all">
                 <div className="p-3 bg-primary/10 rounded-xl text-primary">
-                  <Sparkles className="w-6 h-6" />
+                  <CreditCard className="w-6 h-6" />
                 </div>
                 <div>
-                  <h5 className="font-bold mb-1">IA no Planejamento</h5>
-                  <p className="text-xs text-text-muted">Use o consultor de IA na aba principal para receber estratégias personalizadas.</p>
+                  <h5 className="font-bold mb-1">Compras Parceladas</h5>
+                  <p className="text-xs text-text-muted">Acompanhe as faturas futuras de forma automatizada adicionando transações parceladas.</p>
                 </div>
               </div>
               <div className="glass-card p-6 flex items-start gap-4 hover:border-warning/30 transition-all">
@@ -1025,7 +1117,81 @@ function Dashboard() {
                 </div>
               </div>
             </div>
+
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Payment Confirmation Modal */}
+      <AnimatePresence>
+        {paymentModalOpen && paymentTargetTransaction && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[60] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              className="glass-card w-full max-w-sm text-center space-y-6"
+            >
+              <div className="w-16 h-16 bg-success/10 text-success rounded-full flex items-center justify-center mx-auto">
+                <CheckCircle2 className="w-8 h-8" />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold mb-2">
+                  {paymentTargetTransaction.type === 'income' ? 'Confirmar Recebimento' : 'Confirmar Pagamento'}
+                </h3>
+                <p className="text-sm text-text-muted">
+                  Insira os detalhes do pagamento para <strong className="text-white">"{paymentTargetTransaction.description}"</strong>.
+                </p>
+              </div>
+
+              <div className="space-y-4 text-left">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest">
+                    {paymentTargetTransaction.type === 'income' ? 'Data de Recebimento' : 'Data do Pagamento'}
+                  </label>
+                  <input 
+                    type="date" 
+                    className="input-field w-full" 
+                    value={paymentDate}
+                    onChange={e => setPaymentDate(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest">
+                    {paymentTargetTransaction.type === 'income' ? 'Valor Recebido' : 'Valor Pago'} (Opcional)
+                  </label>
+                  <div className="flex items-center bg-background border border-white/10 rounded-xl overflow-hidden focus-within:border-primary transition-all">
+                    <span className="pl-4 text-text-muted font-bold text-sm">R$</span>
+                    <input 
+                      type="number" 
+                      step="0.01"
+                      className="bg-transparent w-full pl-2 pr-4 py-3 outline-none font-bold"
+                      value={paymentAmount}
+                      onChange={e => setPaymentAmount(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button 
+                  onClick={() => {
+                    setPaymentModalOpen(false);
+                    setPaymentTargetTransaction(null);
+                  }}
+                  className="flex-1 py-3 rounded-xl bg-white/5 text-sm font-bold hover:bg-white/10 transition-all"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  onClick={confirmPayment}
+                  className="flex-1 py-3 rounded-xl bg-success text-sm font-bold hover:bg-success/90 transition-all text-white"
+                >
+                  Confirmar
+                </button>
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </div>

@@ -18,6 +18,11 @@ export interface Transaction {
   date: string;
   dueDate?: string;
   category: string;
+  paidAt?: string;
+  paidAmount?: number;
+  installmentsCount?: number;
+  installmentNumber?: number;
+  installmentGroupId?: string;
 }
 
 export interface Goal {
